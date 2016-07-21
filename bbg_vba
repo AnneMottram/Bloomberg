@@ -1,0 +1,82 @@
+Declare PtrSafe Function getRefDataExcel Lib _
+"C:/Users/Anne/Documents/Bloomberg/Debug/Bloomberg.dll" (ByRef arr As Double, ByVal nLength As Long, ByRef ascii As Byte, ByVal numBonds As Long, ByVal dayDiff As Long) As Long
+
+Declare PtrSafe Function getFlyDataExcel Lib _
+"C:/Users/Anne/Documents/Bloomberg/Debug/Bloomberg.dll" (ByRef flyResults As Double, ByRef ascii As Byte, _
+ByVal numBonds As Long, ByRef maturities As Long, ByVal dateTolerance As Long, ByVal lowerDate As Long, _
+ByVal upperDate As Long, ByVal history As Long) As Long
+
+Sub RefreshRefData()
+    Dim outLength As Long, nLength As Long, numBonds As Long, i As Long
+    numBonds = Rows(Rows.Count).End(xlUp).row - 7
+    Dim arr() As Double
+    ReDim arr(numBonds, 13)
+    nLength = 13 'number of fields
+    Dim ISINS() As String
+    ReDim ISINS(numBonds)
+    For i = 0 To numBonds
+        ISINS(i) = Cells(7 + i, 1).Value
+    Next
+    Dim ascii() As Byte
+    ReDim ascii(numBonds, 11)
+    Dim temp() As Byte
+    For i = 0 To numBonds
+        temp = StrConv(ISINS(i), vbFromUnicode)
+        For j = 0 To 11
+            ascii(i, j) = temp(j)
+            Next
+    Next
+    outLength = getRefDataExcel(arr(0, 0), nLength, ascii(0, 0), numBonds, 1)
+    Call printRefData(arr, numBonds)
+End Sub
+
+Sub printRefData(ByRef arr() As Double, ByVal numBonds As Long)
+Dim i As Long
+For i = 0 To numBonds
+    Cells(7 + i, 2) = DateSerial(arr(i, 0), arr(i, 1), arr(i, 2))
+    For j = 3 To 13
+        Cells(7 + i, j) = arr(i, j)
+        Next
+    Next
+End Sub
+
+Sub refreshFlyData()
+    numBonds = Rows(Rows.Count).End(xlUp).row - 7
+    Dim flyResults() As Double
+    ReDim flyResults(numBonds, 5)
+    Dim ISINS() As String
+    ReDim ISINS(numBonds)
+    For i = 0 To numBonds
+        ISINS(i) = Cells(7 + i, 1).Value
+    Next
+    Dim ascii() As Byte
+    ReDim ascii(numBonds, 11)
+    Dim temp() As Byte
+    For i = 0 To numBonds
+        temp = StrConv(ISINS(i), vbFromUnicode)
+        For j = 0 To 11
+            ascii(i, j) = temp(j)
+            Next
+    Next
+    Dim dateTolerance As Integer: dateTolerance = Cells(2, 2)
+    Dim lowerDate As Integer: lowerDate = Cells(1, 2)
+    Dim upperDate As Integer: upperDate = Cells(1, 2)
+    Dim history As Integer: history = Cells(3, 2)
+    Dim maturities() As Long
+    ReDim maturities(numBonds)
+    For i = 0 To numBonds
+        maturities(i) = Cells(7 + i, 2).Value
+    Next
+    Dim n As Integer
+    n = getFlyDataExcel(flyResults(0, 0), ascii(0, 0), numBonds, maturities(0), dateTolerance, lowerDate, upperDate, history)
+    MsgBox (flyResults(0, 0))
+    Call printFlyData(flyResults, numBonds)
+End Sub
+
+Sub printFlyData(ByRef arr() As Double, ByVal numBonds As Long)
+Dim i As Long
+For i = 0 To numBonds
+    Cells(7 + i, 13) = arr(i, 0)
+    Next
+End Sub
+
