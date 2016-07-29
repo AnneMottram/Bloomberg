@@ -1,7 +1,8 @@
 #include <blpapi_session.h>
-#include <time.h>
-#include <vector>
-#include <ctime>
+#include<time.h>
+#include<vector>
+#include <windows.h>
+#include<ctime>
 #include "Header.h"
 
 using namespace BloombergLP;
@@ -22,7 +23,7 @@ public:
 		today = get_today();
 		prior_workday = prevDate(prior_day_diff);
 	}
-	void runRefData(DoubleMatrix& refData, DoubleMatrix& yesterdayData, std::vector<std::string>bonds){
+	void runRefData(double** refData, double** yesterdayData, std::vector<std::string>bonds){
 		d_host = "localhost";
 		d_port = 8194;
 		SessionOptions sessionOptions;
@@ -37,11 +38,11 @@ public:
 			std::cout << "Failed to open ref data service" << std::endl;
 			return;
 		}
-		getTodayData(session,refData,bonds);
-		getYesterdayData(session, yesterdayData,bonds);
+		getTodayData(session, refData, bonds);
+		getYesterdayData(session, yesterdayData, bonds);
 	}
 
-	void getTodayData(Session& session, DoubleMatrix& data, std::vector<std::string>bonds){
+	void getTodayData(Session& session,double** data, std::vector<std::string>bonds){
 		Service refDataService = session.getService(APIREFDATA_SVC);
 		Request request = refDataService.createRequest("ReferenceDataRequest");
 		request.getElement("fields").appendValue("MATURITY");
@@ -58,7 +59,7 @@ public:
 			request.getElement("securities").appendValue(ISIN);
 		}
 		session.sendRequest(request);
-		while (true){
+		while (true){	
 			Event event = session.nextEvent();
 			MessageIterator msgIter(event);
 			while (msgIter.next()){
@@ -73,7 +74,7 @@ public:
 		}
 	}
 
-	void getYesterdayData(Session& session, DoubleMatrix& data, std::vector<std::string>bonds){
+	void getYesterdayData(Session& session, double** data, std::vector<std::string>bonds){
 		Service refDataService = session.getService(APIREFDATA_SVC);
 		Request request_yest = refDataService.createRequest("HistoricalDataRequest");
 		for (int i = 0; i < bonds.size(); i++){
@@ -95,18 +96,17 @@ public:
 			while (msgIter.next()){
 				Message message = msgIter.message();
 				if (message.messageType() == "HistoricalDataResponse"){
-					i = parse_historical_response(message, data,false);
+					i = parse_historical_response(message, data, false);
 				}
 			}
 			if (event.eventType() == Event::RESPONSE){
 				break;
 			}
 		}
-
 	}
-	
 
-	int runHistData(DoubleMatrix& data, std::vector<std::string>bonds,int history){
+
+	int runHistData(double** data, std::vector<std::string>bonds, int history){
 		d_host = "localhost";
 		d_port = 8194;
 		SessionOptions sessionOptions;
@@ -123,9 +123,14 @@ public:
 		}
 		Service refDataService = session.getService(APIREFDATA_SVC);
 		Request request_hist = refDataService.createRequest("HistoricalDataRequest");
+		std::wstring stemp2 = std::to_wstring(bonds.size());
+		LPCWSTR sw2 = stemp2.c_str();
+		OutputDebugString(L"number bonds ");
+		OutputDebugString(sw2);
+
+
 		for (int i = 0; i < bonds.size(); i++){
-			const char* ISIN = bonds.at(i).c_str();
-			std::cout << ISIN << std::endl;
+			const char* ISIN = bonds.at(i).c_str(); 
 			request_hist.getElement("securities").appendValue(ISIN);
 
 		}
@@ -140,13 +145,14 @@ public:
 
 		session.sendRequest(request_hist);
 		int i = 0;
+
 		while (true){
 			Event event = session.nextEvent();
 			MessageIterator msgIter(event);
 			while (msgIter.next()){
 				Message message = msgIter.message();
 				if (message.messageType() == "HistoricalDataResponse"){
-					i = parse_historical_response(message, data,true);
+					i = parse_historical_response(message, data, true);
 				}
 				std::cout << std::endl;
 			}
@@ -154,189 +160,290 @@ public:
 				break;
 			}
 		}
-	return i;
 
+		return i;
+		OutputDebugString(L"i HERE ");
+
+		std::wstring stemp = std::to_wstring(i);
+		LPCWSTR sw = stemp.c_str();
+		OutputDebugString(sw);
 	}
 
-	int parse_historical_response(Message message, DoubleMatrix& data, bool fly){
+	int parse_historical_response(Message message, double** data, bool fly){
 		Element ReferenceDataResponse = message.asElement();
 		ReferenceDataResponse.print(std::cout);
 		if (ReferenceDataResponse.hasElement("responseError")){
 			std::cout << "Response Error";
+			OutputDebugString(L"ERRRRR");
 			return 0;
 		}
+
 		Element securityData = message.getElement("securityData");
 		Element fieldDataArray = securityData.getElement("fieldData");
 		int numItems = fieldDataArray.numValues();
-		std::vector<double>newRow;
+		int sequenceNum;
 		for (int i = 0; i < numItems; i++){
 			Element fieldData = fieldDataArray.getValueAsElement(i);
-			newRow.push_back(fieldData.getElementAsFloat64("YLD_YTM_MID")*100);
+			sequenceNum = securityData.getElementAsInt32("sequenceNumber");
 			if (fly == false){
-				newRow.push_back(fieldData.getElementAsFloat64("ASSET_SWAP_SPD_MID"));
-				newRow.push_back(fieldData.getElementAsFloat64("BB_Z_SPREAD_TO_OIS_DISC_MID"));
+				data[sequenceNum][i] = (fieldData.getElementAsFloat64("YLD_YTM_MID"));
+				data[sequenceNum][i + 1] = (fieldData.getElementAsFloat64("ASSET_SWAP_SPD_MID"));
+				data[sequenceNum][i + 2] = (fieldData.getElementAsFloat64("BB_Z_SPREAD_TO_OIS_DISC_MID"));
+			}
+			else {
+				data[sequenceNum][i] = (fieldData.getElementAsFloat64("YLD_YTM_MID") * 100);
 			}
 		}
-		data.push_back(newRow);
 		return numItems;
 	}
 
-	void parse_ref_response(Message message, DoubleMatrix& data){
+	void parse_ref_response(Message message, double** data){
 		Element ReferenceDataResponse = message.asElement();
 		ReferenceDataResponse.print(std::cout);
 		if (ReferenceDataResponse.hasElement("responseError")){
+			OutputDebugString(L"ERROR");
 			return;
 		}
 		Element securityDataArray = message.getElement("securityData");
 		int numItems = securityDataArray.numValues();
-		std::vector<double>newRow;
+		double array[11];
+		int sequenceNum;
 		for (int i = 0; i < numItems; i++){
 			Element securityData = securityDataArray.getValueAsElement(i);
+			sequenceNum = securityData.getElementAsInt32("sequenceNumber");
 			Element fieldData = securityData.getElement("fieldData");
-			Datetime  maturity = fieldData.getElementAsDatetime("MATURITY");
-			newRow.push_back(maturity.year());
-			newRow.push_back(maturity.month());
-			newRow.push_back(maturity.day());
-			Datetime  issue_dt = fieldData.getElementAsDatetime("ISSUE_DT");
-			newRow.push_back(maturity.year() - issue_dt.year());
+			Datetime  maturity = fieldData.getElementAsDatetime("MATURITY"); 
+			array[0] = (maturity.year()); //0
+			array[1] = (maturity.month()); //1
+			array[2] = (maturity.day()); //2
+			Datetime  issue_dt = fieldData.getElementAsDatetime("ISSUE_DT"); 
+			array[3] = (maturity.year() - issue_dt.year()); //3
 			//newRow.push_back(issue_dt.month());
 			//newRow.push_back(issue_dt.day());
-			newRow.push_back(fieldData.getElementAsFloat64("DUR_ADJ_MID"));
-			newRow.push_back(fieldData.getElementAsFloat64("LAST_PRICE"));
-			newRow.push_back(fieldData.getElementAsFloat64("PX_LAST_EOD"));
-			newRow.push_back(fieldData.getElementAsFloat64("YLD_YTM_MID")*100);
-			newRow.push_back(fieldData.getElementAsFloat64("ASSET_SWAP_SPD_MID"));
-			newRow.push_back(fieldData.getElementAsFloat64("OAS_SPREAD_MID"));
-			newRow.push_back(fieldData.getElementAsFloat64("BB_Z_SPREAD_TO_OIS_DISC_MID"));
+			array[4] = (fieldData.getElementAsFloat64("DUR_ADJ_MID")); //4
+			array[5] = (fieldData.getElementAsFloat64("LAST_PRICE")); //5
+			array[6] = (fieldData.getElementAsFloat64("PX_LAST_EOD")); //6
+			array[7] = (fieldData.getElementAsFloat64("YLD_YTM_MID")); //7
+			array[8] = (fieldData.getElementAsFloat64("ASSET_SWAP_SPD_MID")); //8
+			array[9] = (fieldData.getElementAsFloat64("BB_Z_SPREAD_TO_OIS_DISC_MID")); //9
+			array[10] = (fieldData.getElementAsFloat64("BB_Z_SPREAD_TO_OIS_DISC_MID")); //10
 		}
-		data.push_back(newRow);
-
+		for (int j = 0; j < 11; j++){
+			data[sequenceNum][j] = array[j];
+		}
 	}
 };
 
-void calculate_flies(bool cluster, int numBonds, int days_data, DoubleMatrix data, long* maturities, long date_tolerance, long lower_date, long upper_date, double* fly_results){
-	int lowerBound, upperBound;
-	if (cluster == true){
-		lowerBound = lower_date;
-		upperBound = upper_date;
+void getFlyMetrics(double* results, bool cluster, int subjectBond, DoubleMatrix data, long* maturities, int date_tolerance, int lower_date, int upper_date, int length){
+	DoubleMatrix lowerBonds;
+	DoubleMatrix upperBonds;
+	std::vector<double>timeSeries;
+	upperAndLowerBonds(cluster, subjectBond, data, maturities, date_tolerance, lower_date, upper_date, upperBonds, lowerBonds);
+	bool dataExists = flyTimeSeries(timeSeries, lowerBonds, data.at(subjectBond), upperBonds, length);
+	if (dataExists){
+		flyMetrics(results, timeSeries);
 	}
 	else{
-		lowerBound = lower_date - date_tolerance;
-		upperBound = upper_date + date_tolerance;
-	}
-	int current_min_lower = INFINITY;
-	int current_min_upper = INFINITY;
-	for (int i = 0; i < numBonds; i++){
-		DoubleMatrix lowerFly;
-		DoubleMatrix upperFly;
-		std::vector <double> subject = data.at(i);
-		for (int j = 0; j < numBonds; j++){
-			if (i == j){
-				continue;
-			}
-			int diff = maturities[i] - maturities[j];
-			if (diff >= lowerBound && diff <= upperBound){
-				if (cluster)
-					lowerFly.push_back(data[j]);
-				else if (diff < current_min_lower){
-					current_min_lower = diff;
-					lowerFly.clear;
-					lowerFly.push_back(data[j]);
-				}
-			}
-			else if (diff*-1 >= lowerBound && diff*-1 <= upperBound){
-				if (cluster)	
-					upperFly.push_back(data[j]);
-				else if (diff*-1 < current_min_upper){
-					current_min_upper = diff;
-					upperFly.clear;
-					upperFly.push_back(data[j]);
-				}
-			}
+		for (int i = 0; i < 8; i++){
+			results[i] = 0;
 		}
-		//std::cout << lowerFly.size()<<" ";
-		//std::cout << upperFly.size() << std::endl;
-		flyCalc(fly_results, lowerFly, subject, upperFly, days_data);
-
-		for (int i = 0; i < 5; i++){
-			std::cout << fly_results[i] << " ";
-		}
-		std::cout << std::endl;
 	}
-
 }
 
-int main(int argc, char **argv){
-	// pull all the data first for all the bonds into a history X numbonds array
-	// do the maturity check
-	/// if its in 
-	std::cout << "Example";
-	SimpleRefData example(1);
-	DoubleMatrix refData;
-	DoubleMatrix yesterdayData;
+void chartData(std::vector<double>& results, bool cluster, int subjectBond, DoubleMatrix data, long* maturities, int date_tolerance, int lower_date, int upper_date, int length){
+	DoubleMatrix lowerBonds;
+	DoubleMatrix upperBonds;
+	std::vector<double>timeSeries;
+	upperAndLowerBonds(cluster, subjectBond, data, maturities, date_tolerance, lower_date, upper_date, upperBonds, lowerBonds);
+	flyTimeSeries(results, lowerBonds, data.at(subjectBond), upperBonds, length);
+}
 
 
-	/*
-	double dataArray1[13];
-	DoubleMatrix data;
-	*/
-	std::string bond1 = "/isin/IT0004923998";
-	std::string bond2 = "/isin/IT0005162828";
-	std::string bond3 = "/isin/IT0005083057";
-	std::vector <std::string> vec;
-	vec.push_back(bond1);
-	vec.push_back(bond2);
-	vec.push_back(bond3);
-	example.runRefData(refData, yesterdayData, vec);
-	std::cout << "data size "<< refData.size() << std::endl;
-	std::cout << "data size " << refData[0].size() << std::endl;
-	for (int i = 0; i < yesterdayData.size(); i++){
-		for (int j = 0; j < yesterdayData[i].size(); j++){
-			std::cout << yesterdayData.at(i).at(j) <<" ";
-		}
-		std::cout << "\n";
+
+long _stdcall getRefData(double* arr, long nlength, unsigned char bonds[], long numbonds,int prior_day_diff) {
+	SimpleRefData bbg(prior_day_diff);
+
+	double** refData;
+	refData = new double *[numbonds+1];
+	for (int i = 0; i <=numbonds; i++)
+		refData[i] = new double[10];
+
+	double** yesterdayData;
+	yesterdayData = new double*[numbonds+1];
+	for (int i = 0; i <= numbonds; i++){
+		yesterdayData[i] = new double[3];
 	}
 
-	for (int i = 0; i < refData.size(); i++)
-	{
+	std::vector <std::string> bond_vec;
+
+	for (int b = 0; b <= numbonds; b++){
+		std::string prefix = "/isin/";
+		std::string suffix;
+		suffix.clear();
+		for (int j = 0; j < ISIN_LENGTH; j++){
+			char a = bonds[b + j*(numbonds + 1)];
+			suffix += a;
+		}
+		
+		std::wstring stemp = std::wstring(suffix.begin(), suffix.end());
+		LPCWSTR sw = stemp.c_str();
+		OutputDebugString(sw);
+		OutputDebugString(L"\n");
+		
+		bond_vec.push_back((prefix + suffix).c_str());
+	}
+	bbg.runRefData(refData, yesterdayData, bond_vec);
+
+	for (int i = 0; i <= numbonds; i++){
 		double dataLocal[13];
 		for (int j = 0; j < 8; j++){
-			dataLocal[j] = refData.at(i).at(j);	
+			dataLocal[j] = refData[i][j];
 		}
-		dataLocal[8] = (dataLocal[7] - yesterdayData.at(i).at(0))*100;
-		dataLocal[9] = refData.at(i).at(8);
-		dataLocal[10] = dataLocal[9] - yesterdayData.at(i).at(1);
-		dataLocal[11] = refData.at(i).at(9);
-		dataLocal[12] = dataLocal[11] - yesterdayData.at(i).at(2);
+		dataLocal[6] = refData[i][5] - refData[i][6]; //Change in last price
+		dataLocal[8] = (dataLocal[7] - yesterdayData[i][0])*100; //Change in yield
+		dataLocal[9] = refData[i][8];
+		dataLocal[10] = dataLocal[9] - yesterdayData[i][1]; //Change in ASW
+		dataLocal[11] = refData[i][9];
+		dataLocal[12] = dataLocal[11] - yesterdayData[i][2]; //Change in OAS
+		//std::wstring stemp = std::to_wstring(refData.at(i).at(6));
+		//std::wstring stemp2 = std::to_wstring(refData.at(i).at(5));
 
+	
 		for (int k = 0; k < 13; k++){
-			std::cout << dataLocal[k]<<" ";
-		}		
-		std::cout << std::endl;
-	}
-	
-	DoubleMatrix flydata;
-	int history = 10;
-	int days_data = example.runHistData(flydata, vec, history);
-	long maturities [] = {53752, 53571, 52841};
-	
-	for (int i = 0; i < flydata.size(); i++)
-	{
-		for (int j = 0; j < flydata[i].size(); j++)
-		{
-			std::cout << flydata.at(i).at(j) <<" ";
+			arr[i + k*(numbonds + 1)] = dataLocal[k];
 		}
-		std::cout << std::endl;
-	}
-	
-
-	
-	int numBonds = 3;
-	double fly_results[5];
-	calculate_flies(numBonds, days_data, flydata, maturities, 0, 1, 1,fly_results);
-	for (int i = 0; i < 5; i++){
-		std::cout << fly_results[i] << " ";
+		
 	}
 
+		/*
+		std::wstring stemp = std::wstring(suffix.begin(), suffix.end());
+		LPCWSTR sw = stemp.c_str();
+		OutputDebugString(sw);
+		OutputDebugString(L"\n");
+		ref_data.run(dataLocal, (prefix + suffix).c_str());
+		for (int j = 0; j < nlength; j++){
+			//arr[b+j*(numbonds+1)] = j;
+			arr[b+j*(numbonds + 1)] = dataLocal[j];
+		}
+		*/
+	delete[] refData;
+	delete[] yesterdayData;
 	return 0;
+}
+/*Inputs: Destinaion Excel grid, array of ISINS, number of bonds, array of maturities, date tolerance for flies,  */
+long _stdcall getFlyData(double* arr, unsigned char bonds[], int numbonds, long* maturities, int microWidth, int dateTolerance, int clusterLower, int clusterUpper, int history){
+	SimpleRefData bbg(1);
+	DoubleMatrix yieldData;
+	DoubleMatrix micro;
+	DoubleMatrix cluster;
+	std::vector <std::string> bond_vec;
+	std::wstring stemp2 = std::to_wstring(numbonds);
+	LPCWSTR sw2 = stemp2.c_str();
+	OutputDebugString(L"numbonds ");
+
+	OutputDebugString(sw2);
+
+	for (int b = 0; b <= numbonds; b++){
+		std::string prefix = "/isin/";
+		std::string suffix;
+		suffix.clear();
+		for (int j = 0; j < ISIN_LENGTH; j++){
+			char a = bonds[b + j*(numbonds + 1)];
+			suffix += a;
+		}
+		std::wstring stemp = std::wstring(suffix.begin(), suffix.end());
+		LPCWSTR sw = stemp.c_str();
+		OutputDebugString(sw);
+		OutputDebugString(L"\n");
+
+		bond_vec.push_back((prefix + suffix).c_str());
+	}
+
+	double** yieldArray;
+	yieldArray = new double*[numbonds+1];
+	for (int i = 0; i <= numbonds; i++){
+		yieldArray[i] = new double[history];
+	}
+
+	int days_data = bbg.runHistData(yieldArray, bond_vec, history);
+	std::wstring stemp = std::to_wstring(days_data);
+	LPCWSTR sw = stemp.c_str();
+	OutputDebugString(sw);
+
+	yieldData.resize(numbonds+1);
+	for (int i = 0; i <= numbonds; i++){
+		yieldData[i].resize(days_data);
+	}
+	for (int i = 0; i <= numbonds; i++){
+		for (int j = 0; j < days_data; j++){
+			yieldData.at(i).at(j) = yieldArray[i][j];
+		}
+	}
+
+	DoubleMatrix microMatrix;
+	DoubleMatrix clusterMatrix;
+	for (int i = 0; i < numbonds; i++){
+		double microLocal[8];
+		double clusterLocal[8];
+		getFlyMetrics(microLocal, false, i, yieldData, maturities, dateTolerance, microWidth, microWidth, days_data);
+		getFlyMetrics(clusterLocal, true, i, yieldData, maturities, 0, clusterLower, clusterUpper, days_data);
+		double flyLocal[16];
+		for (int j = 0; j < 8; j++){
+			flyLocal[j] = microLocal[j];
+			flyLocal[8 + j] = clusterLocal[j];
+		}
+
+		for (int k = 0; k < 16; k++){
+			arr[i + k*(numbonds + 1)] = flyLocal[k];
+		}
+	}
+	delete[] yieldArray;
+	return 0;
+}
+
+long _stdcall getChartData(int bond_id, bool cluster, double* arr, unsigned char bonds[], int numbonds, long* maturities, int microWidth, int dateTolerance, int clusterLower, int clusterUpper, int history){
+	SimpleRefData bbg(1);
+	DoubleMatrix yieldData;
+	std::vector <std::string> bond_vec;
+	for (int b = 0; b < numbonds; b++){
+		std::string prefix = "/isin/";
+		std::string suffix;
+		suffix.clear();
+		for (int j = 0; j < ISIN_LENGTH; j++){
+			char a = bonds[b + j*(numbonds + 1)];
+			suffix += a;
+		}
+		bond_vec.push_back((prefix + suffix).c_str());
+	}
+
+	double** yieldArray;
+	yieldArray = new double*[numbonds+1];
+	for (int i = 0; i <= numbonds; i++){
+		yieldArray[i] = new double[history];
+	}
+
+	int days_data = bbg.runHistData(yieldArray, bond_vec, history);
+
+	yieldData.resize(numbonds);
+	for (int i = 0; i <= numbonds; i++){
+		yieldData[i].resize(days_data);
+	}
+	for (int i = 0; i <= numbonds; i++){
+		for (int j = 0; j < days_data; j++){
+			yieldData.at(i).at(j) = yieldArray[i][j];
+		}
+	}
+	
+	std::vector<double> dataLocal;
+	if (cluster){
+		chartData(dataLocal, cluster, bond_id, yieldData, maturities, 0, clusterLower, clusterUpper, days_data);
+	}
+	else{
+		chartData(dataLocal, cluster, bond_id, yieldData, maturities, dateTolerance, microWidth, microWidth, days_data);
+	}
+	
+	for (int i = 0; i < days_data; i++){
+		arr[i] = dataLocal.at(i);
+	}
+	return days_data;
 }
